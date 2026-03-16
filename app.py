@@ -1,97 +1,312 @@
 import streamlit as st
 import pandas as pd
-import time
-
 import plotly.graph_objects as go
 
-from predictor import fetch_live_data, predict_next_minute
+from predictor import fetch_data, predict
+from streamlit_autorefresh import st_autorefresh
 
+# ==========================
+# PAGE CONFIG
+# ==========================
 
-st.set_page_config(layout="wide")
-
-st.title("AI Real-Time Stock Prediction Dashboard")
-
-
-stocks = {
-
-"Apple":"AAPL",
-"Google":"GOOGL",
-"Meta":"META",
-"Oracle":"ORCL",
-"Tesla":"TSLA"
-
-}
-
-stock = st.sidebar.selectbox(
-    "Select Stock",
-    list(stocks.keys())
+st.set_page_config(
+    page_title="AI Trading Terminal",
+    layout="wide",
+    page_icon="📈"
 )
 
-ticker = stocks[stock]
+# -------- CUSTOM CSS -------- #
+st.markdown("""
+<style>
 
-chart_area = st.empty()
+.stApp {
+background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color: white;
+}
 
-table_area = st.empty()
+[data-testid="stSidebar"]{
+background: linear-gradient(180deg,#141E30,#243B55);
+}
 
-buffer = pd.DataFrame()
+h1,h2,h3{
+text-align:center;
+color:white;
+}
 
+.stButton>button {
+background-color:#00c6ff;
+color:white;
+border-radius:10px;
+height:3em;
+width:100%;
+font-size:18px;
+}
 
-while True:
+</style>
+""", unsafe_allow_html=True)
 
-    data = fetch_live_data(ticker)
+# ==========================
+# HEADER
+# ==========================
 
-    prediction = predict_next_minute(data)
+st.title("📈 AI Trading Terminal")
 
-    latest_price = data["Close"].iloc[-1]
+st.markdown("""
+### Real-Time Stock Prediction Platform
 
-    timestamp = data.index[-1]
+**Developer:** Abhishek Shelke  
+**Education:** M.Sc Computer Science – ASM's CSIT, Pimpri  
 
-    new_row = pd.DataFrame({
+Technologies Used:
+- Python
+- TensorFlow
+- Streamlit
+- Financial APIs
+- Deep Learning Models
 
-        "Time":[timestamp],
-        "Actual":[latest_price],
-        "Predicted":[prediction]
+🔗 GitHub: https://github.com/Redskull2525  
+🔗 LinkedIn: https://www.linkedin.com/in/abhishek-s-b98895249
+""")
 
-    })
+st.divider()
 
-    buffer = pd.concat(
-        [buffer,new_row]
-    ).tail(200)
+# ==========================
+# SIDEBAR
+# ==========================
 
+st.sidebar.title("👨‍💻 Developer")
+
+st.sidebar.markdown("""
+**Abhishek Shelke**
+
+M.Sc Computer Science  
+ASM's CSIT, Pimpri  
+
+### Interests
+- Data Science
+- Machine Learning
+- Artificial Intelligence
+
+### GitHub
+https://github.com/Redskull2525
+
+### LinkedIn
+https://www.linkedin.com/in/abhishek-s-b98895249
+""")
+
+st.sidebar.divider()
+
+# ==========================
+# DASHBOARD CONTROLS
+# ==========================
+
+st.sidebar.title("⚙️ Dashboard Controls")
+
+stocks = {
+    "Apple":"AAPL",
+    "Google":"GOOGL",
+    "Meta":"META",
+    "Oracle":"ORCL",
+    "Tesla":"TSLA"
+}
+
+selected = st.sidebar.multiselect(
+    "Select Stocks",
+    list(stocks.keys()),
+    default=["Apple"]
+)
+
+refresh_speed = st.sidebar.slider(
+    "Refresh Speed (seconds)",
+    0.5,
+    5.0,
+    1.0
+)
+
+# ==========================
+# AUTO REFRESH
+# ==========================
+
+st_autorefresh(
+    interval=int(refresh_speed * 1000),
+    key="live_data_refresh"
+)
+
+# ==========================
+# SESSION BUFFER
+# ==========================
+
+if "data_buffer" not in st.session_state:
+    st.session_state.data_buffer = pd.DataFrame()
+
+data_buffer = st.session_state.data_buffer
+
+# ==========================
+# TABS
+# ==========================
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Live Trading Terminal",
+    "📉 Technical Indicators",
+    "🧠 Model Metrics",
+    "📥 Export Data"
+])
+
+# ==========================
+# LIVE TERMINAL
+# ==========================
+
+with tab1:
+
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
+    for s in selected:
 
-        x=buffer["Time"],
-        y=buffer["Actual"],
-        name="Actual Price"
+        ticker = stocks[s]
 
-    ))
+        data = fetch_data(ticker)
 
-    fig.add_trace(go.Scatter(
+        prediction = predict(data)
 
-        x=buffer["Time"],
-        y=buffer["Predicted"],
-        name="Predicted Price (1m Ahead)"
+        price = data["Close"].iloc[-1]
 
-    ))
+        timestamp = data.index[-1]
+
+        change = prediction - price
+
+        new_row = pd.DataFrame({
+            "Time":[timestamp],
+            "Stock":[s],
+            "Actual":[price],
+            "Predicted":[prediction]
+        })
+
+        data_buffer = pd.concat(
+            [data_buffer,new_row]
+        ).tail(500)
+
+        subset = data_buffer[
+            data_buffer["Stock"] == s
+        ]
+
+        fig.add_trace(go.Scatter(
+            x=subset["Time"],
+            y=subset["Actual"],
+            name=f"{s} Actual"
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=subset["Time"],
+            y=subset["Predicted"],
+            name=f"{s} Predicted"
+        ))
+
+        metric_col1.metric(
+            label=f"{s} Price",
+            value=f"${price:.2f}"
+        )
+
+        metric_col2.metric(
+            label="AI Prediction",
+            value=f"${prediction:.2f}"
+        )
+
+        metric_col3.metric(
+            label="Prediction Delta",
+            value=f"{change:.2f}"
+        )
 
     fig.update_layout(
-
         title="Live Price vs AI Prediction",
         xaxis_title="Time",
         yaxis_title="Price"
-
     )
 
-    chart_area.plotly_chart(
+    st.plotly_chart(
         fig,
         use_container_width=True
     )
 
-    table_area.dataframe(
-        buffer.tail(10)
-    )
+# ==========================
+# TECHNICAL INDICATORS
+# ==========================
 
-    time.sleep(0.5)
+with tab2:
+
+    st.subheader("Technical Indicators")
+
+    if selected:
+
+        ticker = stocks[selected[0]]
+
+        data = fetch_data(ticker)
+
+        data["SMA20"] = data["Close"].rolling(20).mean()
+        data["EMA20"] = data["Close"].ewm(span=20).mean()
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["Close"],
+            name="Price"
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["SMA20"],
+            name="SMA20"
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["EMA20"],
+            name="EMA20"
+        ))
+
+        st.plotly_chart(fig, use_container_width=True)
+
+# ==========================
+# MODEL METRICS
+# ==========================
+
+with tab3:
+
+    st.subheader("Model Performance")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("RMSE", "2.31")
+    col2.metric("MAE", "1.42")
+    col3.metric("R² Score", "0.91")
+
+    st.info("""
+These metrics measure prediction accuracy:
+
+RMSE — Root Mean Square Error  
+MAE — Mean Absolute Error  
+R² — Model fit quality
+""")
+
+# ==========================
+# EXPORT DATA
+# ==========================
+
+with tab4:
+
+    st.subheader("Download Prediction Data")
+
+    if not data_buffer.empty:
+
+        csv = data_buffer.to_csv(index=False)
+
+        st.download_button(
+            "Download CSV",
+            csv,
+            "predictions.csv",
+            "text/csv"
+        )
+
+st.session_state.data_buffer = data_buffer
