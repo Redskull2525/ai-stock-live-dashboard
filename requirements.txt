@@ -1,9 +1,9 @@
 streamlit
+tensorflow==2.15.0
 pandas
 numpy
 yfinance
 plotly
-tensorflow
 scikit-learn
-transformers
+streamlit-autorefresh
 schedule
