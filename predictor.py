@@ -1,91 +1,112 @@
-import numpy as np
-import pandas as pd
-import yfinance as yf
-import joblib
-import tensorflow as tf
-from tensorflow.keras.layers import Dense, LSTM, Dropout, MultiHeadAttention, LayerNormalization, GlobalAveragePooling1D
+import streamlit as st
+import plotly.graph_objects as go
+from predictor import fetch_data, predict, add_indicators, generate_signals, backtest
 
 # ==========================
-# LOAD SCALER
+# CONFIG
 # ==========================
-try:
-    scaler = joblib.load("models/scaler.pkl")
-except:
-    scaler = None
+st.set_page_config(page_title="ELITE AI TRADING SYSTEM", layout="wide")
+
+st.title("🚀 ELITE AI TRADING TERMINAL")
 
 # ==========================
-# MODEL
+# SIDEBAR
 # ==========================
-def build_model():
-    inputs = tf.keras.Input(shape=(60, 1))
+stocks = {
+    "Apple": "AAPL",
+    "Google": "GOOGL",
+    "Tesla": "TSLA"
+}
 
-    attention = MultiHeadAttention(num_heads=4, key_dim=32)(inputs, inputs)
-    x = LayerNormalization()(inputs + attention)
+selected = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
 
-    x = LSTM(64, return_sequences=True)(x)
-    x = Dropout(0.2)(x)
-
-    x = GlobalAveragePooling1D()(x)
-
-    outputs = Dense(1)(x)
-
-    return tf.keras.Model(inputs, outputs)
-
-try:
-    model = build_model()
-    model.load_weights("models/model.weights.h5")
-except:
-    model = None
+ticker = stocks[selected]
 
 # ==========================
 # FETCH DATA
 # ==========================
-def fetch_data(ticker):
-    try:
-        return yf.download(ticker, period="1d", interval="5m")
-    except:
-        return None
+data = fetch_data(ticker)
+
+if data is None or data.empty:
+    st.error("No data available")
+    st.stop()
 
 # ==========================
-# PREDICT
+# PROCESS DATA
 # ==========================
-def predict(data):
-    try:
-        if data is None or len(data) < 60:
-            return None
-
-        features = data[["Close"]].values
-
-        if scaler:
-            features = scaler.transform(features)
-
-        last = features[-60:]
-        last = np.expand_dims(last, axis=0)
-
-        pred = model.predict(last, verbose=0)
-
-        return float(pred[0][0])
-    except:
-        return None
+data = add_indicators(data)
+data = generate_signals(data)
 
 # ==========================
-# RSI + MACD
+# PRICE + AI PREDICTION
 # ==========================
-def add_indicators(df):
+price = data["Close"].iloc[-1]
+prediction = predict(data)
 
-    # RSI
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
+col1, col2 = st.columns(2)
 
-    rs = gain / loss
-    df["RSI"] = 100 - (100 / (1 + rs))
+col1.metric("Current Price", round(price, 2))
 
-    # MACD
-    exp1 = df["Close"].ewm(span=12, adjust=False).mean()
-    exp2 = df["Close"].ewm(span=26, adjust=False).mean()
+if prediction:
+    col2.metric("AI Prediction", round(prediction, 2))
 
-    df["MACD"] = exp1 - exp2
-    df["Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+# ==========================
+# SIGNAL
+# ==========================
+latest_signal = data["TradeSignal"].iloc[-1]
 
-    return df
+if latest_signal == "BUY":
+    st.success("📈 BUY SIGNAL")
+elif latest_signal == "SELL":
+    st.error("📉 SELL SIGNAL")
+else:
+    st.info("⏳ HOLD")
+
+# ==========================
+# BACKTEST
+# ==========================
+final_value = backtest(data)
+
+st.metric("Backtest Portfolio Value", round(final_value, 2))
+
+# ==========================
+# CANDLESTICK
+# ==========================
+fig = go.Figure()
+
+fig.add_trace(go.Candlestick(
+    x=data.index,
+    open=data["Open"],
+    high=data["High"],
+    low=data["Low"],
+    close=data["Close"]
+))
+
+fig.update_layout(template="plotly_dark", height=600)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ==========================
+# RSI
+# ==========================
+rsi_fig = go.Figure()
+
+rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], name="RSI"))
+rsi_fig.add_hline(y=70)
+rsi_fig.add_hline(y=30)
+
+rsi_fig.update_layout(template="plotly_dark", title="RSI")
+
+st.plotly_chart(rsi_fig, use_container_width=True)
+
+# ==========================
+# MACD
+# ==========================
+macd_fig = go.Figure()
+
+macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], name="MACD"))
+macd_fig.add_trace(go.Scatter(x=data.index, y=data["Signal"], name="Signal"))
+
+macd_fig.update_layout(template="plotly_dark", title="MACD")
+
+st.plotly_chart(macd_fig, use_container_width=True)
