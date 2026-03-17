@@ -94,15 +94,29 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 rsi_fig = go.Figure()
-rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], name="RSI", line=dict(color="#00bfff")))
+rsi_fig.add_trace(go.Scatter(
+    x=data.index, y=data["RSI"],
+    name="RSI", line=dict(color="#00bfff")
+))
 rsi_fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
 rsi_fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
 rsi_fig.update_layout(template="plotly_dark", height=250, title="RSI (14)")
 st.plotly_chart(rsi_fig, use_container_width=True)
 
 macd_fig = go.Figure()
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], name="MACD", line=dict(color="#ff9900")))
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["Signal"], name="Signal", line=dict(color="#00ff99")))
-macd_fig.add_bar(x=data.index, y=data["MACD"] - data["Signal"], name="Histogram", marker_color="gray")
+macd_fig.add_trace(go.Scatter(
+    x=data.index, y=data["MACD"],
+    name="MACD", line=dict(color="#ff9900")
+))
+macd_fig.add_trace(go.Scatter(
+    x=data.index, y=data["Signal"],
+    name="Signal", line=dict(color="#00ff99")
+))
+macd_fig.add_bar(
+    x=data.index,
+    y=data["MACD"] - data["Signal"],
+    name="Histogram",
+    marker_color="gray"
+)
 macd_fig.update_layout(template="plotly_dark", height=250, title="MACD")
 st.plotly_chart(macd_fig, use_container_width=True)
