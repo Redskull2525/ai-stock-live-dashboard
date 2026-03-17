@@ -21,18 +21,33 @@ ticker = stocks[selected]
 data = fetch_data(ticker)
 
 if data is None or data.empty:
-    st.warning("Using fallback data (API failed)")
+    st.warning("Using fallback data")
 else:
     st.success("Data loaded successfully")
 
-# Normalize column names
+# Fix column names
 data.columns = [col.capitalize() for col in data.columns]
 
 # ==========================
-# PROCESS
+# CLEAN DATA (IMPORTANT)
+# ==========================
+data = data.dropna()
+
+# ==========================
+# ADD INDICATORS
 # ==========================
 data = add_indicators(data)
 data = generate_signals(data)
+
+# Remove NaN again after indicators
+data = data.dropna()
+
+# ==========================
+# CHECK DATA
+# ==========================
+if len(data) < 10:
+    st.error("Not enough data after processing")
+    st.stop()
 
 # ==========================
 # METRICS
@@ -44,7 +59,7 @@ col1, col2 = st.columns(2)
 
 col1.metric("Current Price", round(price, 2))
 
-if prediction:
+if prediction is not None:
     col2.metric("AI Prediction", round(prediction, 2))
 else:
     col2.warning("Prediction unavailable")
@@ -52,7 +67,7 @@ else:
 # ==========================
 # SIGNAL
 # ==========================
-signal = data["Tradesignal"].iloc[-1] if "Tradesignal" in data else data["TradeSignal"].iloc[-1]
+signal = data["TradeSignal"].iloc[-1]
 
 if signal == "BUY":
     st.success("📈 BUY SIGNAL")
@@ -64,10 +79,11 @@ else:
 # ==========================
 # BACKTEST
 # ==========================
-st.metric("Portfolio Value", round(backtest(data), 2))
+portfolio_value = backtest(data)
+st.metric("Portfolio Value", round(portfolio_value, 2))
 
 # ==========================
-# CHART
+# CANDLESTICK
 # ==========================
 fig = go.Figure()
 
@@ -76,34 +92,51 @@ fig.add_trace(go.Candlestick(
     open=data["Open"],
     high=data["High"],
     low=data["Low"],
-    close=data["Close"]
+    close=data["Close"],
+    name="Price"
 ))
 
-fig.update_layout(template="plotly_dark", height=600)
+fig.update_layout(template="plotly_dark", height=500)
 
 st.plotly_chart(fig, use_container_width=True)
 
 # ==========================
 # RSI
 # ==========================
-rsi_fig = go.Figure()
+if "RSI" in data:
+    rsi_fig = go.Figure()
 
-rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], name="RSI"))
-rsi_fig.add_hline(y=70)
-rsi_fig.add_hline(y=30)
+    rsi_fig.add_trace(go.Scatter(
+        x=data.index,
+        y=data["RSI"],
+        name="RSI"
+    ))
 
-rsi_fig.update_layout(template="plotly_dark", title="RSI")
+    rsi_fig.add_hline(y=70)
+    rsi_fig.add_hline(y=30)
 
-st.plotly_chart(rsi_fig, use_container_width=True)
+    rsi_fig.update_layout(template="plotly_dark", title="RSI Indicator")
+
+    st.plotly_chart(rsi_fig, use_container_width=True)
 
 # ==========================
 # MACD
 # ==========================
-macd_fig = go.Figure()
+if "MACD" in data:
+    macd_fig = go.Figure()
 
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], name="MACD"))
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["Signal"], name="Signal"))
+    macd_fig.add_trace(go.Scatter(
+        x=data.index,
+        y=data["MACD"],
+        name="MACD"
+    ))
 
-macd_fig.update_layout(template="plotly_dark", title="MACD")
+    macd_fig.add_trace(go.Scatter(
+        x=data.index,
+        y=data["Signal"],
+        name="Signal Line"
+    ))
 
-st.plotly_chart(macd_fig, use_container_width=True)
+    macd_fig.update_layout(template="plotly_dark", title="MACD Indicator")
+
+    st.plotly_chart(macd_fig, use_container_width=True)
