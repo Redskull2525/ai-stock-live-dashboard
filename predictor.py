@@ -4,16 +4,12 @@ import requests
 import time
 import os
 import yfinance as yf
+from requests.adapters import HTTPAdapter
 
-# ==========================
-# GLOBALS
-# ==========================
-model = None
 API_KEY = os.getenv("FINNHUB_API_KEY")
+model = None
 
-# ==========================
-# LOAD MODEL
-# ==========================
+
 def load_model():
     global model
     if model is None:
@@ -25,7 +21,6 @@ def load_model():
                 LayerNormalization,
                 GlobalAveragePooling1D
             )
-
             inputs = tf.keras.Input(shape=(60, 1))
             attention = MultiHeadAttention(num_heads=4, key_dim=32)(inputs, inputs)
             x = LayerNormalization()(inputs + attention)
@@ -33,16 +28,13 @@ def load_model():
             x = Dropout(0.2)(x)
             x = GlobalAveragePooling1D()(x)
             outputs = Dense(1)(x)
-
             m = tf.keras.Model(inputs, outputs)
             m.load_weights("models/model.weights.h5")
             model = m
         except:
             model = None
 
-# ==========================
-# LIVE PRICE (Finnhub)
-# ==========================
+
 def get_live_price(ticker):
     try:
         url = "https://finnhub.io/api/v1/quote"
@@ -52,25 +44,44 @@ def get_live_price(ticker):
     except:
         return None
 
-# ==========================
-# FETCH HISTORICAL DATA (yfinance)
-# ==========================
+
 def fetch_data(ticker):
     try:
-        df = yf.download(ticker, period="5d", interval="5m", progress=False)
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+        })
+        session.mount("https://", HTTPAdapter(max_retries=3))
+
+        df = yf.download(
+            ticker,
+            period="5d",
+            interval="5m",
+            progress=False,
+            session=session
+        )
+
         if df is None or df.empty:
             return None
+
         df.index = df.index.tz_localize(None)
         df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
         df = df[["Open", "High", "Low", "Close", "Volume"]]
         df.dropna(inplace=True)
         return df
-    except:
+
+    except Exception:
         return None
 
-# ==========================
-# PREDICT
-# ==========================
+
 def predict(data):
     try:
         if data is None or len(data) < 60:
@@ -91,9 +102,7 @@ def predict(data):
     except:
         return None, 0
 
-# ==========================
-# INDICATORS
-# ==========================
+
 def add_indicators(df):
     delta = df["Close"].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
@@ -107,9 +116,7 @@ def add_indicators(df):
     df["Signal"] = df["MACD"].ewm(span=9).mean()
     return df
 
-# ==========================
-# SIGNALS
-# ==========================
+
 def generate_signals(df):
     signals = []
     for i in range(len(df)):
@@ -125,9 +132,7 @@ def generate_signals(df):
     df["TradeSignal"] = signals
     return df
 
-# ==========================
-# BACKTEST
-# ==========================
+
 def backtest(df):
     balance = 10000
     shares = 0
