@@ -1,112 +1,172 @@
-import streamlit as st
-import plotly.graph_objects as go
-from predictor import fetch_data, predict, add_indicators, generate_signals, backtest
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import joblib
+
+# Lazy globals
+model = None
+scaler = None
+
 
 # ==========================
-# CONFIG
+# LOAD SCALER
 # ==========================
-st.set_page_config(page_title="ELITE AI TRADING SYSTEM", layout="wide")
+def load_scaler():
+    global scaler
+    if scaler is None:
+        try:
+            scaler = joblib.load("models/scaler.pkl")
+        except Exception as e:
+            print("Scaler error:", e)
+            scaler = None
 
-st.title("🚀 ELITE AI TRADING TERMINAL")
 
 # ==========================
-# SIDEBAR
+# LOAD MODEL (SAFE)
 # ==========================
-stocks = {
-    "Apple": "AAPL",
-    "Google": "GOOGL",
-    "Tesla": "TSLA"
-}
+def load_model():
+    global model
 
-selected = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
+    if model is None:
+        try:
+            import tensorflow as tf
+            from tensorflow.keras.layers import (
+                Dense, LSTM, Dropout,
+                MultiHeadAttention,
+                LayerNormalization,
+                GlobalAveragePooling1D
+            )
 
-ticker = stocks[selected]
+            inputs = tf.keras.Input(shape=(60, 1))
+
+            attention = MultiHeadAttention(
+                num_heads=4,
+                key_dim=32
+            )(inputs, inputs)
+
+            x = LayerNormalization()(inputs + attention)
+
+            x = LSTM(64, return_sequences=True)(x)
+            x = Dropout(0.2)(x)
+
+            x = GlobalAveragePooling1D()(x)
+            outputs = Dense(1)(x)
+
+            m = tf.keras.Model(inputs, outputs)
+            m.load_weights("models/model.weights.h5")
+
+            model = m
+
+        except Exception as e:
+            print("Model error:", e)
+            model = None
+
 
 # ==========================
 # FETCH DATA
 # ==========================
-data = fetch_data(ticker)
+def fetch_data(ticker):
+    try:
+        return yf.download(ticker, period="5d", interval="5m")
+    except Exception as e:
+        print("Fetch error:", e)
+        return None
 
-if data is None or data.empty:
-    st.error("No data available")
-    st.stop()
-
-# ==========================
-# PROCESS DATA
-# ==========================
-data = add_indicators(data)
-data = generate_signals(data)
 
 # ==========================
-# PRICE + AI PREDICTION
+# PREDICT
 # ==========================
-price = data["Close"].iloc[-1]
-prediction = predict(data)
+def predict(data):
+    try:
+        if data is None or len(data) < 60:
+            return None
 
-col1, col2 = st.columns(2)
+        load_scaler()
+        load_model()
 
-col1.metric("Current Price", round(price, 2))
+        if model is None:
+            return None
 
-if prediction:
-    col2.metric("AI Prediction", round(prediction, 2))
+        features = data[["Close"]].values
+
+        if scaler:
+            features = scaler.transform(features)
+
+        last = features[-60:]
+        last = np.expand_dims(last, axis=0)
+
+        pred = model.predict(last, verbose=0)
+        return float(pred[0][0])
+
+    except Exception as e:
+        print("Prediction error:", e)
+        return None
+
 
 # ==========================
-# SIGNAL
+# INDICATORS
 # ==========================
-latest_signal = data["TradeSignal"].iloc[-1]
+def add_indicators(df):
 
-if latest_signal == "BUY":
-    st.success("📈 BUY SIGNAL")
-elif latest_signal == "SELL":
-    st.error("📉 SELL SIGNAL")
-else:
-    st.info("⏳ HOLD")
+    delta = df["Close"].diff()
+
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = -delta.clip(upper=0).rolling(14).mean()
+
+    rs = gain / loss
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    exp1 = df["Close"].ewm(span=12).mean()
+    exp2 = df["Close"].ewm(span=26).mean()
+
+    df["MACD"] = exp1 - exp2
+    df["Signal"] = df["MACD"].ewm(span=9).mean()
+
+    return df
+
+
+# ==========================
+# SIGNALS
+# ==========================
+def generate_signals(df):
+
+    signals = []
+
+    for i in range(len(df)):
+        if df["RSI"].iloc[i] < 30 and df["MACD"].iloc[i] > df["Signal"].iloc[i]:
+            signals.append("BUY")
+
+        elif df["RSI"].iloc[i] > 70 and df["MACD"].iloc[i] < df["Signal"].iloc[i]:
+            signals.append("SELL")
+
+        else:
+            signals.append("HOLD")
+
+    df["TradeSignal"] = signals
+    return df
+
 
 # ==========================
 # BACKTEST
 # ==========================
-final_value = backtest(data)
+def backtest(df, initial_balance=10000):
 
-st.metric("Backtest Portfolio Value", round(final_value, 2))
+    balance = initial_balance
+    shares = 0
 
-# ==========================
-# CANDLESTICK
-# ==========================
-fig = go.Figure()
+    for i in range(len(df)):
 
-fig.add_trace(go.Candlestick(
-    x=data.index,
-    open=data["Open"],
-    high=data["High"],
-    low=data["Low"],
-    close=data["Close"]
-))
+        signal = df["TradeSignal"].iloc[i]
+        price = df["Close"].iloc[i]
 
-fig.update_layout(template="plotly_dark", height=600)
+        if signal == "BUY" and balance > price:
+            shares = balance / price
+            balance = 0
 
-st.plotly_chart(fig, use_container_width=True)
+        elif signal == "SELL" and shares > 0:
+            balance = shares * price
+            shares = 0
 
-# ==========================
-# RSI
-# ==========================
-rsi_fig = go.Figure()
+    final_value = balance + shares * df["Close"].iloc[-1]
 
-rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], name="RSI"))
-rsi_fig.add_hline(y=70)
-rsi_fig.add_hline(y=30)
-
-rsi_fig.update_layout(template="plotly_dark", title="RSI")
-
-st.plotly_chart(rsi_fig, use_container_width=True)
-
-# ==========================
-# MACD
-# ==========================
-macd_fig = go.Figure()
-
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], name="MACD"))
-macd_fig.add_trace(go.Scatter(x=data.index, y=data["Signal"], name="Signal"))
-
-macd_fig.update_layout(template="plotly_dark", title="MACD")
-
-st.plotly_chart(macd_fig, use_container_width=True)
+    return final_value
