@@ -67,7 +67,19 @@ def load_model():
 # ==========================
 def fetch_data(ticker):
     try:
-        return yf.download(ticker, period="5d", interval="5m")
+        # Try fast intraday first
+        data = yf.download(ticker, period="1d", interval="5m")
+
+        # Fallback if empty
+        if data is None or data.empty:
+            data = yf.download(ticker, period="5d", interval="1h")
+
+        # Final fallback
+        if data is None or data.empty:
+            data = yf.download(ticker, period="1mo", interval="1d")
+
+        return data
+
     except Exception as e:
         print("Fetch error:", e)
         return None
