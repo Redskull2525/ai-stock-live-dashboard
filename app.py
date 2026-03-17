@@ -27,19 +27,20 @@ ticker = stocks[selected]
 data = fetch_data(ticker)
 
 if data is None:
-    st.error("Data fetch failed (None returned)")
+    st.error("Data fetch failed")
     st.stop()
 
 if data.empty:
-    st.error("Empty data from Yahoo API")
-    st.write("Try different stock or wait...")
+    st.error("Empty data from API")
     st.stop()
 
+# Fix column names (important for stooq)
+data.columns = [col.capitalize() for col in data.columns]
+
 st.success("Data loaded successfully")
-st.write(data.tail())  # DEBUG VIEW
 
 # ==========================
-# PROCESS
+# PROCESS DATA
 # ==========================
 data = add_indicators(data)
 data = generate_signals(data)
@@ -56,6 +57,8 @@ col1.metric("Current Price", round(price, 2))
 
 if prediction:
     col2.metric("AI Prediction", round(prediction, 2))
+else:
+    col2.warning("Prediction not available")
 
 # ==========================
 # SIGNAL
@@ -76,7 +79,7 @@ final_value = backtest(data)
 st.metric("Portfolio Value (Backtest)", round(final_value, 2))
 
 # ==========================
-# CANDLESTICK
+# CANDLESTICK CHART
 # ==========================
 fig = go.Figure()
 
