@@ -14,8 +14,8 @@ from tensorflow.keras.layers import (
 )
 
 # Load scaler
-scaler = pickle.load(open("models/scaler.pkl","rb"))
-
+import joblib
+scaler = joblib.load("models/scaler.pkl")
 # Rebuild model architecture
 def build_model():
 
