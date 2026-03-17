@@ -1,5 +1,3 @@
-import os
-port = int(os.environ.get("PORT", 8501))
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,7 +15,10 @@ st.set_page_config(
     page_icon="📈"
 )
 
-# -------- CUSTOM CSS -------- #
+# ==========================
+# CUSTOM CSS
+# ==========================
+
 st.markdown("""
 <style>
 
@@ -35,15 +36,6 @@ text-align:center;
 color:white;
 }
 
-.stButton>button {
-background-color:#00c6ff;
-color:white;
-border-radius:10px;
-height:3em;
-width:100%;
-font-size:18px;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,20 +46,13 @@ font-size:18px;
 st.title("📈 AI Trading Terminal")
 
 st.markdown("""
-### Real-Time Stock Prediction Platform
+### Real-Time Stock Prediction Platform  
 
-**Developer:** Abhishek Shelke  
-**Education:** M.Sc Computer Science – ASM's CSIT, Pimpri  
-
-Technologies Used:
-- Python
-- TensorFlow
-- Streamlit
-- Financial APIs
-- Deep Learning Models
+👨‍💻 **Abhishek Shelke**  
+M.Sc Computer Science  
 
 🔗 GitHub: https://github.com/Redskull2525  
-🔗 LinkedIn: https://www.linkedin.com/in/abhishek-s-b98895249
+🔗 LinkedIn: https://www.linkedin.com/in/abhishek-s-b98895249  
 """)
 
 st.divider()
@@ -76,33 +61,7 @@ st.divider()
 # SIDEBAR
 # ==========================
 
-st.sidebar.title("👨‍💻 Developer")
-
-st.sidebar.markdown("""
-**Abhishek Shelke**
-
-M.Sc Computer Science  
-ASM's CSIT, Pimpri  
-
-### Interests
-- Data Science
-- Machine Learning
-- Artificial Intelligence
-
-### GitHub
-https://github.com/Redskull2525
-
-### LinkedIn
-https://www.linkedin.com/in/abhishek-s-b98895249
-""")
-
-st.sidebar.divider()
-
-# ==========================
-# DASHBOARD CONTROLS
-# ==========================
-
-st.sidebar.title("⚙️ Dashboard Controls")
+st.sidebar.title("⚙️ Controls")
 
 stocks = {
     "Apple":"AAPL",
@@ -131,11 +90,11 @@ refresh_speed = st.sidebar.slider(
 
 st_autorefresh(
     interval=int(refresh_speed * 1000),
-    key="live_data_refresh"
+    key="refresh"
 )
 
 # ==========================
-# SESSION BUFFER
+# SESSION STATE BUFFER
 # ==========================
 
 if "data_buffer" not in st.session_state:
@@ -144,171 +103,69 @@ if "data_buffer" not in st.session_state:
 data_buffer = st.session_state.data_buffer
 
 # ==========================
-# TABS
+# MAIN DASHBOARD
 # ==========================
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Live Trading Terminal",
-    "📉 Technical Indicators",
-    "🧠 Model Metrics",
-    "📥 Export Data"
-])
+st.subheader("📊 Live Price vs AI Prediction")
+
+fig = go.Figure()
+
+for s in selected:
+
+    ticker = stocks[s]
+
+    data = fetch_data(ticker)
+
+    if data.empty:
+        continue
+
+    prediction = predict(data)
+
+    price = data["Close"].iloc[-1]
+
+    timestamp = data.index[-1]
+
+    new_row = pd.DataFrame({
+        "Time":[timestamp],
+        "Stock":[s],
+        "Actual":[price],
+        "Predicted":[prediction]
+    })
+
+    data_buffer = pd.concat(
+        [data_buffer,new_row]
+    ).tail(300)
+
+    subset = data_buffer[
+        data_buffer["Stock"] == s
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=subset["Time"],
+        y=subset["Actual"],
+        name=f"{s} Actual"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=subset["Time"],
+        y=subset["Predicted"],
+        name=f"{s} Predicted"
+    ))
 
 # ==========================
-# LIVE TERMINAL
+# PLOT
 # ==========================
 
-with tab1:
+fig.update_layout(
+    title="Live Stock Price vs AI Prediction",
+    xaxis_title="Time",
+    yaxis_title="Price"
+)
 
-    metric_col1, metric_col2, metric_col3 = st.columns(3)
-
-    fig = go.Figure()
-
-    for s in selected:
-
-        ticker = stocks[s]
-
-        data = fetch_data(ticker)
-
-        prediction = predict(data)
-
-        price = data["Close"].iloc[-1]
-
-        timestamp = data.index[-1]
-
-        change = prediction - price
-
-        new_row = pd.DataFrame({
-            "Time":[timestamp],
-            "Stock":[s],
-            "Actual":[price],
-            "Predicted":[prediction]
-        })
-
-        data_buffer = pd.concat(
-            [data_buffer,new_row]
-        ).tail(500)
-
-        subset = data_buffer[
-            data_buffer["Stock"] == s
-        ]
-
-        fig.add_trace(go.Scatter(
-            x=subset["Time"],
-            y=subset["Actual"],
-            name=f"{s} Actual"
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=subset["Time"],
-            y=subset["Predicted"],
-            name=f"{s} Predicted"
-        ))
-
-        metric_col1.metric(
-            label=f"{s} Price",
-            value=f"${price:.2f}"
-        )
-
-        metric_col2.metric(
-            label="AI Prediction",
-            value=f"${prediction:.2f}"
-        )
-
-        metric_col3.metric(
-            label="Prediction Delta",
-            value=f"{change:.2f}"
-        )
-
-    fig.update_layout(
-        title="Live Price vs AI Prediction",
-        xaxis_title="Time",
-        yaxis_title="Price"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+st.plotly_chart(fig, use_container_width=True)
 
 # ==========================
-# TECHNICAL INDICATORS
+# SAVE BUFFER
 # ==========================
-
-with tab2:
-
-    st.subheader("Technical Indicators")
-
-    if selected:
-
-        ticker = stocks[selected[0]]
-
-        data = fetch_data(ticker)
-
-        data["SMA20"] = data["Close"].rolling(20).mean()
-        data["EMA20"] = data["Close"].ewm(span=20).mean()
-
-        fig = go.Figure()
-
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data["Close"],
-            name="Price"
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data["SMA20"],
-            name="SMA20"
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=data.index,
-            y=data["EMA20"],
-            name="EMA20"
-        ))
-
-        st.plotly_chart(fig, use_container_width=True)
-
-# ==========================
-# MODEL METRICS
-# ==========================
-
-with tab3:
-
-    st.subheader("Model Performance")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("RMSE", "2.31")
-    col2.metric("MAE", "1.42")
-    col3.metric("R² Score", "0.91")
-
-    st.info("""
-These metrics measure prediction accuracy:
-
-RMSE — Root Mean Square Error  
-MAE — Mean Absolute Error  
-R² — Model fit quality
-""")
-
-# ==========================
-# EXPORT DATA
-# ==========================
-
-with tab4:
-
-    st.subheader("Download Prediction Data")
-
-    if not data_buffer.empty:
-
-        csv = data_buffer.to_csv(index=False)
-
-        st.download_button(
-            "Download CSV",
-            csv,
-            "predictions.csv",
-            "text/csv"
-        )
 
 st.session_state.data_buffer = data_buffer
