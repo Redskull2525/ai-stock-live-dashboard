@@ -1,171 +1,133 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-
-from predictor import fetch_data, predict
+from predictor import fetch_data, predict, add_indicators
 from streamlit_autorefresh import st_autorefresh
 
 # ==========================
-# PAGE CONFIG
+# CONFIG
 # ==========================
-
-st.set_page_config(
-    page_title="AI Trading Terminal",
-    layout="wide",
-    page_icon="📈"
-)
-
-# ==========================
-# CUSTOM CSS
-# ==========================
-
-st.markdown("""
-<style>
-
-.stApp {
-background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-color: white;
-}
-
-[data-testid="stSidebar"]{
-background: linear-gradient(180deg,#141E30,#243B55);
-}
-
-h1,h2,h3{
-text-align:center;
-color:white;
-}
-
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="AI Trading Terminal", layout="wide")
 
 # ==========================
 # HEADER
 # ==========================
-
 st.title("📈 AI Trading Terminal")
 
-st.markdown("""
-### Real-Time Stock Prediction Platform  
-
-👨‍💻 **Abhishek Shelke**  
-M.Sc Computer Science  
-
-🔗 GitHub: https://github.com/Redskull2525  
-🔗 LinkedIn: https://www.linkedin.com/in/abhishek-s-b98895249  
-""")
-
-st.divider()
+st.markdown("### Live Trading Dashboard with AI + Indicators")
 
 # ==========================
 # SIDEBAR
 # ==========================
-
-st.sidebar.title("⚙️ Controls")
-
 stocks = {
-    "Apple":"AAPL",
-    "Google":"GOOGL",
-    "Meta":"META",
-    "Oracle":"ORCL",
-    "Tesla":"TSLA"
+    "Apple": "AAPL",
+    "Google": "GOOGL",
+    "Tesla": "TSLA"
 }
 
-selected = st.sidebar.multiselect(
-    "Select Stocks",
-    list(stocks.keys()),
-    default=["Apple"]
-)
+selected = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
 
-refresh_speed = st.sidebar.slider(
-    "Refresh Speed (seconds)",
-    0.5,
-    5.0,
-    1.0
-)
+refresh = st.sidebar.slider("Refresh (sec)", 1, 5, 2)
+
+st_autorefresh(interval=refresh * 1000, key="refresh")
 
 # ==========================
-# AUTO REFRESH
+# FETCH DATA
 # ==========================
+ticker = stocks[selected]
 
-st_autorefresh(
-    interval=int(refresh_speed * 1000),
-    key="refresh"
-)
+data = fetch_data(ticker)
 
-# ==========================
-# SESSION STATE BUFFER
-# ==========================
-
-if "data_buffer" not in st.session_state:
-    st.session_state.data_buffer = pd.DataFrame()
-
-data_buffer = st.session_state.data_buffer
+if data is None or data.empty:
+    st.error("No data available")
+    st.stop()
 
 # ==========================
-# MAIN DASHBOARD
+# ADD INDICATORS
 # ==========================
+data = add_indicators(data)
 
-st.subheader("📊 Live Price vs AI Prediction")
+# ==========================
+# PRICE + PREDICTION
+# ==========================
+price = data["Close"].iloc[-1]
+prediction = predict(data)
 
+col1, col2 = st.columns(2)
+
+col1.metric("Current Price", round(price, 2))
+
+if prediction:
+    col2.metric("Predicted Price", round(prediction, 2))
+else:
+    col2.warning("Prediction not available")
+
+# ==========================
+# BUY / SELL SIGNAL
+# ==========================
+if prediction:
+    if prediction > price:
+        st.success("📈 BUY Signal")
+    else:
+        st.error("📉 SELL Signal")
+
+# ==========================
+# CANDLESTICK CHART
+# ==========================
 fig = go.Figure()
 
-for s in selected:
-
-    ticker = stocks[s]
-
-    data = fetch_data(ticker)
-
-    if data.empty:
-        continue
-
-    prediction = predict(data)
-
-    price = data["Close"].iloc[-1]
-
-    timestamp = data.index[-1]
-
-    new_row = pd.DataFrame({
-        "Time":[timestamp],
-        "Stock":[s],
-        "Actual":[price],
-        "Predicted":[prediction]
-    })
-
-    data_buffer = pd.concat(
-        [data_buffer,new_row]
-    ).tail(300)
-
-    subset = data_buffer[
-        data_buffer["Stock"] == s
-    ]
-
-    fig.add_trace(go.Scatter(
-        x=subset["Time"],
-        y=subset["Actual"],
-        name=f"{s} Actual"
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=subset["Time"],
-        y=subset["Predicted"],
-        name=f"{s} Predicted"
-    ))
-
-# ==========================
-# PLOT
-# ==========================
+fig.add_trace(go.Candlestick(
+    x=data.index,
+    open=data["Open"],
+    high=data["High"],
+    low=data["Low"],
+    close=data["Close"],
+    name="Candlestick"
+))
 
 fig.update_layout(
-    title="Live Stock Price vs AI Prediction",
-    xaxis_title="Time",
-    yaxis_title="Price"
+    title="Candlestick Chart",
+    template="plotly_dark",
+    height=600
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
 # ==========================
-# SAVE BUFFER
+# RSI
 # ==========================
+rsi_fig = go.Figure()
 
-st.session_state.data_buffer = data_buffer
+rsi_fig.add_trace(go.Scatter(
+    x=data.index,
+    y=data["RSI"],
+    name="RSI"
+))
+
+rsi_fig.add_hline(y=70)
+rsi_fig.add_hline(y=30)
+
+rsi_fig.update_layout(title="RSI Indicator", template="plotly_dark")
+
+st.plotly_chart(rsi_fig, use_container_width=True)
+
+# ==========================
+# MACD
+# ==========================
+macd_fig = go.Figure()
+
+macd_fig.add_trace(go.Scatter(
+    x=data.index,
+    y=data["MACD"],
+    name="MACD"
+))
+
+macd_fig.add_trace(go.Scatter(
+    x=data.index,
+    y=data["Signal"],
+    name="Signal"
+))
+
+macd_fig.update_layout(title="MACD Indicator", template="plotly_dark")
+
+st.plotly_chart(macd_fig, use_container_width=True)
