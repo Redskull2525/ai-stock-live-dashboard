@@ -1,54 +1,69 @@
 import streamlit as st
 import plotly.graph_objects as go
-import pandas as pd
-from predictor import fetch_data, predict, add_indicators, generate_signals, backtest
+from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="FINAL AI TRADING TERMINAL", layout="wide")
+from predictor import (
+    fetch_data,
+    predict,
+    add_indicators,
+    generate_signals,
+    backtest,
+    get_live_price
+)
 
-st.title("🚀 FINAL AI TRADING TERMINAL")
+# ==========================
+# CONFIG
+# ==========================
+st.set_page_config(page_title="LIVE AI TRADING", layout="wide")
 
-stocks = {"Apple": "AAPL", "Google": "GOOGL", "Tesla": "TSLA"}
+st.title("🚀 LIVE AI TRADING TERMINAL ---- please wait for couple of mins to load the site")
+
+# ==========================
+# AUTO REFRESH
+# ==========================
+st_autorefresh(interval=3000, key="live")
+
+# ==========================
+# SIDEBAR
+# ==========================
+stocks = {
+    "Apple": "AAPL",
+    "Google": "GOOGL",
+    "Tesla": "TSLA"
+}
+
 selected = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
 ticker = stocks[selected]
+
+# ==========================
+# LIVE PRICE
+# ==========================
+live_price = get_live_price(ticker)
+
+if live_price:
+    st.success(f"🔴 LIVE PRICE: {round(live_price, 2)} USD")
+else:
+    st.warning("Live price not available")
 
 # ==========================
 # FETCH DATA
 # ==========================
 data = fetch_data(ticker)
 
-# DEBUG
-st.write("Raw Data Shape:", None if data is None else data.shape)
-
-# ==========================
-# SAFETY CHECK
-# ==========================
 if data is None or data.empty:
-    st.error("Data not available")
+    st.error("Failed to fetch data")
     st.stop()
 
-# Fix columns
-data.columns = [col.capitalize() for col in data.columns]
+# Replace last price with live price
+if live_price:
+    data.iloc[-1, data.columns.get_loc("Close")] = live_price
 
 # ==========================
-# ADD INDICATORS
+# PROCESS
 # ==========================
 data = add_indicators(data)
 data = generate_signals(data)
-
-# ==========================
-# CLEAN DATA (SAFE)
-# ==========================
 data = data.fillna(method="bfill").fillna(method="ffill")
-
-# DEBUG
-st.write("Processed Data Shape:", data.shape)
-
-# ==========================
-# FINAL CHECK
-# ==========================
-if len(data) < 20:
-    st.error("Not enough data after processing")
-    st.stop()
 
 # ==========================
 # METRICS
@@ -59,12 +74,7 @@ prediction, confidence = predict(data)
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Current Price", round(price, 2))
-
-if prediction:
-    col2.metric("Prediction", round(prediction, 2))
-else:
-    col2.warning("Prediction unavailable")
-
+col2.metric("Prediction", round(prediction, 2))
 col3.metric("Confidence", f"{confidence*100:.1f}%")
 
 # ==========================
@@ -82,8 +92,7 @@ else:
 # ==========================
 # BACKTEST
 # ==========================
-portfolio = backtest(data)
-st.metric("Portfolio Value", round(portfolio, 2))
+st.metric("Portfolio Value", round(backtest(data), 2))
 
 # ==========================
 # CANDLESTICK
