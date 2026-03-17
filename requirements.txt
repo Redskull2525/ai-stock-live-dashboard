@@ -1,9 +1,7 @@
-streamlit==1.35.0
-tensorflow==2.13.1
-pandas
-numpy
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.3.2
+tensorflow==2.15.0
 yfinance
-plotly
-scikit-learn
-streamlit-autorefresh
-schedule
+joblib
+streamlit
