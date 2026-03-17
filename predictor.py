@@ -1,12 +1,9 @@
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import joblib
 
-# Lazy globals
 model = None
 scaler = None
-
 
 # ==========================
 # LOAD SCALER
@@ -22,7 +19,7 @@ def load_scaler():
 
 
 # ==========================
-# LOAD MODEL (SAFE)
+# LOAD MODEL
 # ==========================
 def load_model():
     global model
@@ -45,11 +42,10 @@ def load_model():
             )(inputs, inputs)
 
             x = LayerNormalization()(inputs + attention)
-
             x = LSTM(64, return_sequences=True)(x)
             x = Dropout(0.2)(x)
-
             x = GlobalAveragePooling1D()(x)
+
             outputs = Dense(1)(x)
 
             m = tf.keras.Model(inputs, outputs)
@@ -63,26 +59,35 @@ def load_model():
 
 
 # ==========================
-# FETCH DATA
+# FETCH DATA (ROBUST)
 # ==========================
 def fetch_data(ticker):
+    import pandas as pd
+
+    # 1️⃣ Try Yahoo
     try:
-        # Try fast intraday first
-        data = yf.download(ticker, period="1d", interval="5m")
+        import yfinance as yf
+        data = yf.download(ticker, period="5d", interval="5m")
 
-        # Fallback if empty
-        if data is None or data.empty:
-            data = yf.download(ticker, period="5d", interval="1h")
-
-        # Final fallback
-        if data is None or data.empty:
-            data = yf.download(ticker, period="1mo", interval="1d")
-
-        return data
+        if data is not None and not data.empty:
+            return data
 
     except Exception as e:
-        print("Fetch error:", e)
-        return None
+        print("Yahoo failed:", e)
+
+    # 2️⃣ Fallback → Stooq
+    try:
+        from pandas_datareader import data as pdr
+
+        df = pdr.DataReader(ticker, "stooq")
+        df = df.sort_index()
+
+        return df
+
+    except Exception as e:
+        print("Stooq failed:", e)
+
+    return None
 
 
 # ==========================
@@ -145,6 +150,7 @@ def generate_signals(df):
     signals = []
 
     for i in range(len(df)):
+
         if df["RSI"].iloc[i] < 30 and df["MACD"].iloc[i] > df["Signal"].iloc[i]:
             signals.append("BUY")
 
