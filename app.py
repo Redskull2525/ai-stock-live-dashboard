@@ -1,20 +1,13 @@
 import streamlit as st
-import pandas as pd
 import plotly.graph_objects as go
-from predictor import fetch_data, predict, add_indicators
-from streamlit_autorefresh import st_autorefresh
+from predictor import fetch_data, predict, add_indicators, generate_signals, backtest
 
 # ==========================
 # CONFIG
 # ==========================
-st.set_page_config(page_title="AI Trading Terminal", layout="wide")
+st.set_page_config(page_title="ELITE AI TRADING SYSTEM", layout="wide")
 
-# ==========================
-# HEADER
-# ==========================
-st.title("📈 AI Trading Terminal")
-
-st.markdown("### Live Trading Dashboard with AI + Indicators")
+st.title("🚀 ELITE AI TRADING TERMINAL")
 
 # ==========================
 # SIDEBAR
@@ -26,16 +19,11 @@ stocks = {
 }
 
 selected = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
-
-refresh = st.sidebar.slider("Refresh (sec)", 1, 5, 2)
-
-st_autorefresh(interval=refresh * 1000, key="refresh")
+ticker = stocks[selected]
 
 # ==========================
 # FETCH DATA
 # ==========================
-ticker = stocks[selected]
-
 data = fetch_data(ticker)
 
 if data is None or data.empty:
@@ -43,9 +31,10 @@ if data is None or data.empty:
     st.stop()
 
 # ==========================
-# ADD INDICATORS
+# PROCESS
 # ==========================
 data = add_indicators(data)
+data = generate_signals(data)
 
 # ==========================
 # PRICE + PREDICTION
@@ -58,21 +47,28 @@ col1, col2 = st.columns(2)
 col1.metric("Current Price", round(price, 2))
 
 if prediction:
-    col2.metric("Predicted Price", round(prediction, 2))
+    col2.metric("AI Prediction", round(prediction, 2))
+
+# ==========================
+# SIGNAL
+# ==========================
+signal = data["TradeSignal"].iloc[-1]
+
+if signal == "BUY":
+    st.success("📈 BUY SIGNAL")
+elif signal == "SELL":
+    st.error("📉 SELL SIGNAL")
 else:
-    col2.warning("Prediction not available")
+    st.info("⏳ HOLD")
 
 # ==========================
-# BUY / SELL SIGNAL
+# BACKTEST
 # ==========================
-if prediction:
-    if prediction > price:
-        st.success("📈 BUY Signal")
-    else:
-        st.error("📉 SELL Signal")
+final_value = backtest(data)
+st.metric("Portfolio Value (Backtest)", round(final_value, 2))
 
 # ==========================
-# CANDLESTICK CHART
+# CANDLESTICK
 # ==========================
 fig = go.Figure()
 
@@ -81,15 +77,10 @@ fig.add_trace(go.Candlestick(
     open=data["Open"],
     high=data["High"],
     low=data["Low"],
-    close=data["Close"],
-    name="Candlestick"
+    close=data["Close"]
 ))
 
-fig.update_layout(
-    title="Candlestick Chart",
-    template="plotly_dark",
-    height=600
-)
+fig.update_layout(template="plotly_dark", height=600)
 
 st.plotly_chart(fig, use_container_width=True)
 
@@ -98,16 +89,11 @@ st.plotly_chart(fig, use_container_width=True)
 # ==========================
 rsi_fig = go.Figure()
 
-rsi_fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["RSI"],
-    name="RSI"
-))
-
+rsi_fig.add_trace(go.Scatter(x=data.index, y=data["RSI"], name="RSI"))
 rsi_fig.add_hline(y=70)
 rsi_fig.add_hline(y=30)
 
-rsi_fig.update_layout(title="RSI Indicator", template="plotly_dark")
+rsi_fig.update_layout(template="plotly_dark", title="RSI")
 
 st.plotly_chart(rsi_fig, use_container_width=True)
 
@@ -116,18 +102,9 @@ st.plotly_chart(rsi_fig, use_container_width=True)
 # ==========================
 macd_fig = go.Figure()
 
-macd_fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["MACD"],
-    name="MACD"
-))
+macd_fig.add_trace(go.Scatter(x=data.index, y=data["MACD"], name="MACD"))
+macd_fig.add_trace(go.Scatter(x=data.index, y=data["Signal"], name="Signal"))
 
-macd_fig.add_trace(go.Scatter(
-    x=data.index,
-    y=data["Signal"],
-    name="Signal"
-))
-
-macd_fig.update_layout(title="MACD Indicator", template="plotly_dark")
+macd_fig.update_layout(template="plotly_dark", title="MACD")
 
 st.plotly_chart(macd_fig, use_container_width=True)
