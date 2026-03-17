@@ -26,9 +26,17 @@ ticker = stocks[selected]
 # ==========================
 data = fetch_data(ticker)
 
-if data is None or data.empty:
-    st.error("No data available")
+if data is None:
+    st.error("Data fetch failed (None returned)")
     st.stop()
+
+if data.empty:
+    st.error("Empty data from Yahoo API")
+    st.write("Try different stock or wait...")
+    st.stop()
+
+st.success("Data loaded successfully")
+st.write(data.tail())  # DEBUG VIEW
 
 # ==========================
 # PROCESS
