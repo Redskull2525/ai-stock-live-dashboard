@@ -1,14 +1,50 @@
-import yfinance as yf
 import numpy as np
 import pandas as pd
+import yfinance as yf
 import pickle
 
-from tensorflow.keras.models import load_model
+import tensorflow as tf
+from tensorflow.keras.layers import (
+    Dense,
+    LSTM,
+    Dropout,
+    MultiHeadAttention,
+    LayerNormalization,
+    GlobalAveragePooling1D
+)
 
-model = load_model("models/transformer_model.keras")
-
+# Load scaler
 scaler = pickle.load(open("models/scaler.pkl","rb"))
 
+# Rebuild model architecture
+def build_model():
+
+    inputs = tf.keras.Input(shape=(60,7))
+
+    attention = MultiHeadAttention(
+        num_heads=4,
+        key_dim=32
+    )(inputs,inputs)
+
+    x = LayerNormalization()(inputs + attention)
+
+    x = LSTM(64, return_sequences=True)(x)
+
+    x = Dropout(0.2)(x)
+
+    x = GlobalAveragePooling1D()(x)
+
+    outputs = Dense(1)(x)
+
+    model = tf.keras.Model(inputs,outputs)
+
+    return model
+
+# Load model
+model = build_model()
+model.load_weights("models/model.weights.h5")
+
+# Fetch data
 def fetch_data(ticker):
 
     data = yf.download(
@@ -19,64 +55,15 @@ def fetch_data(ticker):
 
     return data
 
-
-def add_indicators(data):
-
-    data["SMA20"] = data["Close"].rolling(20).mean()
-
-    data["EMA20"] = data["Close"].ewm(span=20).mean()
-
-    delta = data["Close"].diff()
-
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
-
-    rs = avg_gain / avg_loss
-
-    data["RSI"] = 100 - (100 / (1 + rs))
-
-    data["MA20"] = data["Close"].rolling(20).mean()
-
-    data["STD"] = data["Close"].rolling(20).std()
-
-    data["Upper"] = data["MA20"] + (2 * data["STD"])
-
-    data["Lower"] = data["MA20"] - (2 * data["STD"])
-
-    data.dropna(inplace=True)
-
-    return data
-
-
+# Predict
 def predict(data):
 
-    data = add_indicators(data)
+    features = data[["Close"]].values
 
-    features = data[
-    [
-    "Close",
-    "Volume",
-    "SMA20",
-    "EMA20",
-    "RSI",
-    "Upper",
-    "Lower"
-    ]
-    ]
+    last = features[-60:]
 
-    scaled = scaler.transform(features)
+    last = np.expand_dims(last, axis=0)
 
-    last = scaled[-60:]
+    prediction = model.predict(last)
 
-    pred = model.predict(
-        last.reshape(1,60,last.shape[1])
-    )
-
-    output = scaler.inverse_transform(
-        np.hstack([pred,np.zeros((1,6))])
-    )
-
-    return float(output[0][0])
+    return float(prediction[0][0])
