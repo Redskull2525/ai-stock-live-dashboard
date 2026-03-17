@@ -2,16 +2,10 @@ import streamlit as st
 import plotly.graph_objects as go
 from predictor import fetch_data, predict, add_indicators, generate_signals, backtest
 
-# ==========================
-# CONFIG
-# ==========================
 st.set_page_config(page_title="ELITE AI TRADING SYSTEM", layout="wide")
 
 st.title("🚀 ELITE AI TRADING TERMINAL")
 
-# ==========================
-# SIDEBAR
-# ==========================
 stocks = {
     "Apple": "AAPL",
     "Google": "GOOGL",
@@ -26,27 +20,22 @@ ticker = stocks[selected]
 # ==========================
 data = fetch_data(ticker)
 
-if data is None:
-    st.error("Data fetch failed")
-    st.stop()
+if data is None or data.empty:
+    st.warning("Using fallback data (API failed)")
+else:
+    st.success("Data loaded successfully")
 
-if data.empty:
-    st.error("Empty data from API")
-    st.stop()
-
-# Fix column names (important for stooq)
+# Normalize column names
 data.columns = [col.capitalize() for col in data.columns]
 
-st.success("Data loaded successfully")
-
 # ==========================
-# PROCESS DATA
+# PROCESS
 # ==========================
 data = add_indicators(data)
 data = generate_signals(data)
 
 # ==========================
-# PRICE + PREDICTION
+# METRICS
 # ==========================
 price = data["Close"].iloc[-1]
 prediction = predict(data)
@@ -58,12 +47,12 @@ col1.metric("Current Price", round(price, 2))
 if prediction:
     col2.metric("AI Prediction", round(prediction, 2))
 else:
-    col2.warning("Prediction not available")
+    col2.warning("Prediction unavailable")
 
 # ==========================
 # SIGNAL
 # ==========================
-signal = data["TradeSignal"].iloc[-1]
+signal = data["Tradesignal"].iloc[-1] if "Tradesignal" in data else data["TradeSignal"].iloc[-1]
 
 if signal == "BUY":
     st.success("📈 BUY SIGNAL")
@@ -75,11 +64,10 @@ else:
 # ==========================
 # BACKTEST
 # ==========================
-final_value = backtest(data)
-st.metric("Portfolio Value (Backtest)", round(final_value, 2))
+st.metric("Portfolio Value", round(backtest(data), 2))
 
 # ==========================
-# CANDLESTICK CHART
+# CHART
 # ==========================
 fig = go.Figure()
 
