@@ -1,9 +1,9 @@
 services:
   - type: web
     name: ai-stock-live-dashboard
-    env: python
+    runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10
+      - key: FINNHUB_API_KEY
+        sync: false
